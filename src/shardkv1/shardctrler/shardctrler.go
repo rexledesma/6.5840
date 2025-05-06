@@ -5,10 +5,10 @@ package shardctrler
 //
 
 import (
-	"6.5840/kvsrv1"
-	"6.5840/kvtest1"
+	kvsrv "6.5840/kvsrv1"
+	kvtest "6.5840/kvtest1"
 	"6.5840/shardkv1/shardcfg"
-	"6.5840/tester1"
+	tester "6.5840/tester1"
 )
 
 // ShardCtrler for the controller and kv clerk.
