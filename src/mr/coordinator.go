@@ -8,12 +8,110 @@ import (
 	"os"
 )
 
-type Coordinator struct {
-	// Your definitions here.
+type TaskStatus int
 
+const (
+	Idle TaskStatus = iota
+	InProgress
+	Completed
+)
+
+type BaseTask struct {
+	Status TaskStatus
+	TaskId int
+}
+
+type MapTask struct {
+	BaseTask
+	InputFile string
+}
+
+type ReduceTask struct {
+	BaseTask
+}
+
+type Coordinator struct {
+	MapTasks    []MapTask
+	ReduceTasks []ReduceTask
+	NReduce     int
 }
 
 // Your code here -- RPC handlers for the worker to call.
+
+// RequestTask is an RPC handler for workers to request a task to work on
+func (c *Coordinator) RequestTask(args *RequestTask, reply *RequestTaskReply) error {
+	// First, check if all map tasks are completed
+	mapTasksCompleted := true
+	for i := range c.MapTasks {
+		if c.MapTasks[i].Status != Completed {
+			mapTasksCompleted = false
+			break
+		}
+	}
+
+	// If map tasks are not completed, assign an idle map task
+	if !mapTasksCompleted {
+		for i := range c.MapTasks {
+			if c.MapTasks[i].Status == Idle {
+				c.MapTasks[i].Status = InProgress
+				reply.Type = "map"
+				reply.TaskID = c.MapTasks[i].TaskId
+				reply.InputFile = c.MapTasks[i].InputFile
+				reply.NReduce = c.NReduce
+				reply.NMap = len(c.MapTasks)
+				return nil
+			}
+		}
+	}
+
+	// If map tasks are completed, check if all reduce tasks are completed
+	reduceTasksCompleted := true
+	for i := range c.ReduceTasks {
+		if c.ReduceTasks[i].Status != Completed {
+			reduceTasksCompleted = false
+			break
+		}
+	}
+
+	// If reduce tasks are not completed, assign an idle reduce task
+	if !reduceTasksCompleted {
+		for i := range c.ReduceTasks {
+			if c.ReduceTasks[i].Status == Idle {
+				c.ReduceTasks[i].Status = InProgress
+				reply.Type = "reduce"
+				reply.TaskID = c.ReduceTasks[i].TaskId
+				reply.NReduce = c.NReduce
+				reply.NMap = len(c.MapTasks)
+				return nil
+			}
+		}
+	}
+
+	// If all tasks are completed, signal the worker to exit
+	if mapTasksCompleted && reduceTasksCompleted {
+		reply.Type = "done"
+		return nil
+	}
+
+	// If no tasks are available, ask the worker to wait
+	reply.Type = "wait"
+	return nil
+}
+
+// CompleteTask is an RPC handler for workers to mark tasks as completed
+func (c *Coordinator) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) error {
+	switch args.Type {
+	case "map":
+		mapTask := &c.MapTasks[args.TaskID]
+		mapTask.BaseTask.Status = Completed
+	case "reduce":
+		reduceTask := &c.ReduceTasks[args.TaskID]
+		reduceTask.BaseTask.Status = Completed
+	}
+
+	reply.OK = true
+	return nil
+}
 
 // an example RPC handler.
 //
@@ -40,20 +138,53 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
+	// Check if all map tasks are completed
+	for _, mapTask := range c.MapTasks {
+		if mapTask.Status != Completed {
+			return false
+		}
+	}
 
-	// Your code here.
+	// Check if all reduce tasks are completed
+	for _, reduceTask := range c.ReduceTasks {
+		if reduceTask.Status != Completed {
+			return false
+		}
+	}
 
-	return ret
+	return true
 }
 
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{}
+	c := Coordinator{
+		MapTasks:    make([]MapTask, len(files)),
+		ReduceTasks: make([]ReduceTask, nReduce),
+		NReduce:     nReduce,
+	}
 
-	// Your code here.
+	// Initialize map tasks
+	for mapTaskId, file := range files {
+		c.MapTasks[mapTaskId] = MapTask{
+			BaseTask: BaseTask{
+				Status: Idle,
+				TaskId: mapTaskId,
+			},
+			InputFile: file,
+		}
+	}
+
+	// Initialize reduce tasks
+	for reduceTaskId := range c.ReduceTasks {
+		c.ReduceTasks[reduceTaskId] = ReduceTask{
+			BaseTask: BaseTask{
+				Status: Idle,
+				TaskId: reduceTaskId,
+			},
+		}
+	}
 
 	c.server()
 	return &c

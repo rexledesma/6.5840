@@ -1,10 +1,14 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"net/rpc"
+	"os"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -25,11 +29,138 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
+	for {
+		// Request a task from the coordinator
+		args := RequestTask{}
+		reply := RequestTaskReply{}
 
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+		ok := call("Coordinator.RequestTask", &args, &reply)
+		if !ok {
+			fmt.Println("call failed!")
+			time.Sleep(time.Second)
+			continue
+		}
 
+		// Process the task based on its type
+		switch reply.Type {
+		case "map":
+			// Perform map task
+			performMapTask(mapf, &reply)
+		case "reduce":
+			// Perform reduce task
+			performReduceTask(reducef, &reply)
+		case "wait":
+			// No tasks available, wait a bit
+			time.Sleep(time.Second)
+		case "done":
+			// Job is complete
+			return
+		}
+	}
+}
+
+func performMapTask(mapf func(string, string) []KeyValue, reply *RequestTaskReply) {
+	// Read input file
+	file, err := os.Open(reply.InputFile)
+	if err != nil {
+		fmt.Printf("cannot open %v", reply.InputFile)
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		fmt.Printf("cannot read %v", reply.InputFile)
+		return
+	}
+
+	// Apply map function
+	kvs := mapf(reply.InputFile, string(content))
+
+	// Create buckets for intermediate files
+	buckets := make([][]KeyValue, reply.NReduce)
+
+	// Separate key-value pairs into buckets using ihash
+	for _, kv := range kvs {
+		bucketIndex := ihash(kv.Key) % reply.NReduce
+		buckets[bucketIndex] = append(buckets[bucketIndex], kv)
+	}
+
+	// Write intermediate files
+	for reduceTaskId, bucket := range buckets {
+		if len(bucket) > 0 {
+			filename := fmt.Sprintf("mr-%d-%d", reply.TaskID, reduceTaskId)
+			file, err := os.Create(filename)
+			if err != nil {
+				fmt.Printf("cannot create file: %v\n", err)
+				continue
+			}
+			defer file.Close()
+
+			enc := json.NewEncoder(file)
+			for _, kv := range bucket {
+				err = enc.Encode(&kv)
+				if err != nil {
+					fmt.Printf("error encoding key-value pair: %v\n", err)
+				}
+			}
+		}
+	}
+
+	// Notify coordinator that map task is complete
+	taskDoneArgs := CompleteTaskArgs{
+		Type:   "map",
+		TaskID: reply.TaskID,
+	}
+	taskDoneReply := CompleteTaskReply{}
+	call("Coordinator.CompleteTask", &taskDoneArgs, &taskDoneReply)
+}
+
+func performReduceTask(reducef func(string, []string) string, reply *RequestTaskReply) {
+	// Read intermediateKvs files for this reduce task
+	intermediateKvs := make(map[string][]string)
+	for mapTaskId := range reply.NMap {
+		filename := fmt.Sprintf("mr-%d-%d", mapTaskId, reply.TaskID)
+		file, err := os.Open(filename)
+		if err != nil {
+			fmt.Printf("cannot open %v", filename)
+			continue
+		}
+		defer file.Close()
+
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			intermediateKvs[kv.Key] = append(intermediateKvs[kv.Key], kv.Value)
+		}
+	}
+
+	// Create output file
+	outputFilename := fmt.Sprintf("mr-out-%d", reply.TaskID)
+	outputFile, err := os.Create(outputFilename)
+	if err != nil {
+		fmt.Printf("cannot create %v", outputFilename)
+		return
+	}
+	defer outputFile.Close()
+
+	// Apply reduce function to each key group
+	for key, values := range intermediateKvs {
+		// Apply reduce function and write output
+		output := reducef(key, values)
+		fmt.Fprintf(outputFile, "%v %v\n", key, output)
+	}
+
+	// Notify coordinator that reduce task is complete
+	taskDoneArgs := CompleteTaskArgs{
+		Type:   "reduce",
+		TaskID: reply.TaskID,
+	}
+	taskDoneReply := CompleteTaskReply{}
+	call("Coordinator.CompleteTask", &taskDoneArgs, &taskDoneReply)
 }
 
 // example function to show how to make an RPC call to the coordinator.
