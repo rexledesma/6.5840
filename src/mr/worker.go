@@ -35,9 +35,8 @@ func Worker(mapf func(string, string) []KeyValue,
 
 		ok := call("Coordinator.RequestTask", &args, &reply)
 		if !ok {
-			fmt.Println("call failed!")
-			time.Sleep(time.Second)
-			continue
+			fmt.Println("Worker has failed to contact the coordinator. Terminating worker.")
+			return
 		}
 
 		// Process the task based on its type
