@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"sync"
 )
 
 type TaskStatus int
@@ -31,6 +32,7 @@ type ReduceTask struct {
 }
 
 type Coordinator struct {
+	mu          sync.Mutex
 	MapTasks    []MapTask
 	ReduceTasks []ReduceTask
 	NReduce     int
@@ -40,6 +42,9 @@ type Coordinator struct {
 
 // RequestTask is an RPC handler for workers to request a task to work on
 func (c *Coordinator) RequestTask(args *RequestTask, reply *RequestTaskReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	// First, check if all map tasks are completed
 	mapTasksCompleted := true
 	for i := range c.MapTasks {
@@ -100,6 +105,9 @@ func (c *Coordinator) RequestTask(args *RequestTask, reply *RequestTaskReply) er
 
 // CompleteTask is an RPC handler for workers to mark tasks as completed
 func (c *Coordinator) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	switch args.Type {
 	case "map":
 		mapTask := &c.MapTasks[args.TaskID]
