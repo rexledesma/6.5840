@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"sync"
+	"time"
 )
 
 type TaskStatus int
@@ -18,8 +19,9 @@ const (
 )
 
 type BaseTask struct {
-	Status TaskStatus
-	TaskId int
+	Status    TaskStatus
+	TaskId    int
+	StartTime time.Time
 }
 
 type MapTask struct {
@@ -36,6 +38,16 @@ type Coordinator struct {
 	MapTasks    []MapTask
 	ReduceTasks []ReduceTask
 	NReduce     int
+}
+
+const timeout = 10 * time.Second
+
+func (t BaseTask) isTimeout() bool {
+	return t.Status == InProgress && time.Since(t.StartTime) >= timeout
+}
+
+func (t BaseTask) canSchedule() bool {
+	return t.Status == Idle || t.isTimeout()
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -56,17 +68,23 @@ func (c *Coordinator) RequestTask(args *RequestTask, reply *RequestTaskReply) er
 
 	// If map tasks are not completed, assign an idle map task
 	if !mapTasksCompleted {
-		for i := range c.MapTasks {
-			if c.MapTasks[i].Status == Idle {
+		for i, mapTask := range c.MapTasks {
+			if mapTask.canSchedule() {
 				c.MapTasks[i].Status = InProgress
+				c.MapTasks[i].StartTime = time.Now()
+
 				reply.Type = "map"
-				reply.TaskID = c.MapTasks[i].TaskId
-				reply.InputFile = c.MapTasks[i].InputFile
+				reply.TaskID = mapTask.TaskId
+				reply.InputFile = mapTask.InputFile
 				reply.NReduce = c.NReduce
 				reply.NMap = len(c.MapTasks)
 				return nil
 			}
 		}
+
+		// If no tasks are available, ask the worker to wait
+		reply.Type = "wait"
+		return nil
 	}
 
 	// If map tasks are completed, check if all reduce tasks are completed
@@ -80,26 +98,26 @@ func (c *Coordinator) RequestTask(args *RequestTask, reply *RequestTaskReply) er
 
 	// If reduce tasks are not completed, assign an idle reduce task
 	if !reduceTasksCompleted {
-		for i := range c.ReduceTasks {
-			if c.ReduceTasks[i].Status == Idle {
+		for i, reduceTask := range c.ReduceTasks {
+			if reduceTask.canSchedule() {
 				c.ReduceTasks[i].Status = InProgress
+				c.ReduceTasks[i].StartTime = time.Now()
+
 				reply.Type = "reduce"
-				reply.TaskID = c.ReduceTasks[i].TaskId
+				reply.TaskID = reduceTask.TaskId
 				reply.NReduce = c.NReduce
 				reply.NMap = len(c.MapTasks)
 				return nil
 			}
 		}
-	}
 
-	// If all tasks are completed, signal the worker to exit
-	if mapTasksCompleted && reduceTasksCompleted {
-		reply.Type = "done"
+		// If no tasks are available, ask the worker to wait
+		reply.Type = "wait"
 		return nil
 	}
 
-	// If no tasks are available, ask the worker to wait
-	reply.Type = "wait"
+	// If all tasks are completed, signal the worker to exit
+	reply.Type = "done"
 	return nil
 }
 
