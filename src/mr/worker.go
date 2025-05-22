@@ -80,21 +80,19 @@ func performMapTask(mapf func(string, string) []KeyValue, reply *RequestTaskRepl
 
 	// Write intermediate files
 	for reduceTaskId, bucket := range buckets {
-		if len(bucket) > 0 {
-			filename := fmt.Sprintf("mr-%d-%d", reply.TaskID, reduceTaskId)
-			file, err := os.Create(filename)
-			if err != nil {
-				fmt.Printf("cannot create file: %v\n", err)
-				continue
-			}
-			defer file.Close()
+		filename := fmt.Sprintf("mr-%d-%d", reply.TaskID, reduceTaskId)
+		file, err := os.Create(filename)
+		if err != nil {
+			fmt.Printf("cannot create file: %v\n", err)
+			continue
+		}
+		defer file.Close()
 
-			enc := json.NewEncoder(file)
-			for _, kv := range bucket {
-				err = enc.Encode(&kv)
-				if err != nil {
-					fmt.Printf("error encoding key-value pair: %v\n", err)
-				}
+		enc := json.NewEncoder(file)
+		for _, kv := range bucket {
+			err = enc.Encode(&kv)
+			if err != nil {
+				fmt.Printf("error encoding key-value pair: %v\n", err)
 			}
 		}
 	}
