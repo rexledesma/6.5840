@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"log"
 	"net/rpc"
 	"os"
@@ -61,16 +60,9 @@ func Worker(mapf func(string, string) []KeyValue,
 
 func performMapTask(mapf func(string, string) []KeyValue, reply *RequestTaskReply) {
 	// Read input file
-	file, err := os.Open(reply.InputFile)
+	content, err := os.ReadFile(reply.InputFile)
 	if err != nil {
 		fmt.Printf("cannot open %v", reply.InputFile)
-		return
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		fmt.Printf("cannot read %v", reply.InputFile)
 		return
 	}
 
