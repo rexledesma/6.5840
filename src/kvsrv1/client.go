@@ -1,6 +1,8 @@
 package kvsrv
 
 import (
+	"time"
+
 	"6.5840/kvsrv1/rpc"
 	kvtest "6.5840/kvtest1"
 	tester "6.5840/tester1"
@@ -65,15 +67,18 @@ func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
 	isFirstRPC := true
 	for {
 		ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
-		if ok {
-			err := reply.Err
-			if !isFirstRPC && err == rpc.ErrVersion {
-				err = rpc.ErrMaybe
-			}
-
-			return err
-		} else {
+		if !ok {
 			isFirstRPC = false
+			time.Sleep(100 * time.Millisecond)
+
+			continue
 		}
+
+		err := reply.Err
+		if !isFirstRPC && err == rpc.ErrVersion {
+			err = rpc.ErrMaybe
+		}
+
+		return err
 	}
 }
