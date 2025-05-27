@@ -35,8 +35,17 @@ func (lk *Lock) Acquire() {
 			continue
 		}
 
-		ok := lk.ck.Put(lk.key, lk.identifier, version)
-		if ok == rpc.OK {
+		err = lk.ck.Put(lk.key, lk.identifier, version)
+		if err == rpc.ErrVersion {
+			continue
+		}
+
+		if err == rpc.OK {
+			return
+		}
+
+		valueFromRetry, versionFromRetry, _ := lk.ck.Get(lk.key)
+		if err == rpc.ErrMaybe && valueFromRetry == lk.identifier && versionFromRetry == version+1 {
 			return
 		}
 	}
