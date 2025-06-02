@@ -130,24 +130,29 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	if rf.killed() {
+		return
+	}
+
 	// Never vote for a candidate who is less up to date than you.
+	reply.VoteGranted = false
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
-		reply.VoteGranted = false
 
 		return
 	}
 
-	// Update the terms.
+	// Transition to follower if you're not up-to-date to the caller.
 	reply.Term = args.Term
-	rf.currentTerm = args.Term
+	if args.Term > rf.currentTerm {
+		rf.transitionToFollower(args.Term)
+	}
 
-	// Vote if you've voted before, or if this is your first time voting.
-	isCandidateVoter := (rf.votedFor == -1 || rf.votedFor == args.CandidateId)
+	// Vote if you've voted for this candidate before, or if this is your first time voting.
 	// TODO: Your code here (3B).
-	isCandidateLogLatest := true
-	if isCandidateVoter && isCandidateLogLatest {
+	if rf.votedFor == args.CandidateId || rf.votedFor == -1 {
 		rf.votedFor = args.CandidateId
+		rf.latestRpcTimestamp = time.Now()
 		reply.VoteGranted = true
 	}
 }
@@ -155,6 +160,25 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	if rf.killed() {
+		return
+	}
+
+	if args.Term > rf.currentTerm {
+		rf.transitionToFollower(args.Term)
+	}
+
+	reply.Success = false
+	if args.Term == rf.currentTerm {
+		if rf.state != Follower {
+			rf.transitionToFollower(args.Term)
+		}
+		rf.latestRpcTimestamp = time.Now()
+		reply.Success = true
+	}
+
+	reply.Term = rf.currentTerm
 }
 
 // example code to send a RequestVote RPC to a server.
