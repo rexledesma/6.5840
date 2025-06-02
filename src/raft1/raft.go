@@ -315,7 +315,7 @@ func (rf *Raft) transitionToCandidate() {
 				DPrintf("Candidate server %d has %d votes", rf.me, votes)
 
 				// If you have a majority, become the leader
-				if 2*votes > len(rf.peers)+1 {
+				if 2*votes > len(rf.peers) {
 					rf.transitionToLeader()
 					return
 				}
