@@ -236,11 +236,23 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
+	rf.mu.Lock()
+	termStarted := rf.currentTerm
+	rf.mu.Unlock()
+
 	for !rf.killed() {
 		rf.mu.Lock()
 
 		// If you're the current leader, then don't run an election timer.
 		if _, isLeader := rf.GetState(); isLeader {
+			rf.mu.Unlock()
+
+			return
+		}
+
+		if termStarted != rf.currentTerm {
+			DPrintf("Server %d election timer term changed from %d to %d, exiting timer.", rf.me, termStarted, rf.currentTerm)
+
 			rf.mu.Unlock()
 
 			return
