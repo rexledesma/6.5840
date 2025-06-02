@@ -265,6 +265,8 @@ func (rf *Raft) ticker() {
 }
 
 func (rf *Raft) transitionToCandidate() {
+	DPrintf("Transitioning server %d to Candidate", rf.me)
+
 	// Update the state of the server to reflect that it's a candidate.
 	rf.state = Candidate
 	rf.currentTerm += 1
@@ -310,6 +312,8 @@ func (rf *Raft) transitionToCandidate() {
 			if reply.Term == currentTerm && reply.VoteGranted {
 				votes += 1
 
+				DPrintf("Candidate server %d has %d votes", rf.me, votes)
+
 				// If you have a majority, become the leader
 				if 2*votes > len(rf.peers)+1 {
 					rf.transitionToLeader()
@@ -324,6 +328,8 @@ func (rf *Raft) transitionToCandidate() {
 }
 
 func (rf *Raft) transitionToFollower(term int) {
+	DPrintf("Transitioning server %d to Follower", rf.me)
+
 	rf.state = Follower
 	rf.currentTerm = term
 	rf.votedFor = -1
@@ -333,6 +339,8 @@ func (rf *Raft) transitionToFollower(term int) {
 }
 
 func (rf *Raft) transitionToLeader() {
+	DPrintf("Transitioning server %d to Leader", rf.me)
+
 	rf.state = Leader
 
 	go func() {
