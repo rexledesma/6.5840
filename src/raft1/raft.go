@@ -47,6 +47,9 @@ type Raft struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	return rf.currentTerm, rf.state == Leader
 }
 
@@ -268,7 +271,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 
 		// If you're the current leader, then don't run an election timer.
-		if _, isLeader := rf.GetState(); isLeader {
+		if rf.state == Leader {
 			rf.mu.Unlock()
 
 			return
@@ -382,7 +385,7 @@ func (rf *Raft) transitionToLeader() {
 	go func() {
 		for !rf.killed() {
 			rf.mu.Lock()
-			_, isLeader := rf.GetState()
+			isLeader := rf.state == Leader
 			rf.mu.Unlock()
 
 			// If you're no longer the leader, stop sending heartbeats.
